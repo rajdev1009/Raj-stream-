@@ -4,32 +4,29 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiohttp import web
 import aiohttp 
 
-# --- 1. CONFIGURATION (Ise Dhyan se Bharo) ---
-# NOTE: Numbers bina quotes "" ke hone chahiye.
+# --- 1. CONFIGURATION ---
 
-API_ID = 27084955            # Apna API ID yahan daalo (Integer)
-API_HASH = "91c88b554ab2a34f8b0c72228f06fc0b" # Apna Hash yahan daalo
-BOT_TOKEN = "7777252416:AAGTEeNl4dMffOAC0SqSMT4CI5EiMKnKi-E" # Bot Token yahan
+API_ID = 27084955
+API_HASH = "91c88b554ab2a34f8b0c72228f06fc0b"
+BOT_TOKEN = "7777252416:AAGTEeNl4dMffOAC0SqSMT4CI5EiMKnKi-E"
 
-# Log Channel ID (Bot yahan Admin hona chahiye)
-BIN_CHANNEL = -1002391366258  
+# Log Channel ID (Make sure Bot is Admin here)
+BIN_CHANNEL = -1002391366258
 
-# Maalik ki ID (Sirf tum settings khol paoge)
+# Owner ID
 OWNER_ID = 5804953849       
 
-# Koyeb URL (Pehli baar deploy karne ke baad yahan update karna)
-# Example: "https://my-bot.koyeb.app"
-# Line 22 ko aise likho:
+# Koyeb URL
 ONLINE_URL = "https://tropical-constantia-dminemraj-a4819015.koyeb.app"
 PORT = 8080
 
 # --- SHORTENER CONFIGURATION ---
 SHORTENER_DOMAIN = "gplinks.com" 
-SHORTENER_API_KEY = "tumhara_api_key"
+SHORTENER_API_KEY = "tumhara_api_key" # Jab ON karoge tab asli key daalna
 
 # --- SYSTEM SETTINGS ---
 SYSTEM_CONFIG = {
-    "use_shortener": False  # Default ON (Shortener use karega)
+    "use_shortener": False  # Abhi OFF hai testing ke liye
 }
 
 # Pyrogram Client Setup
@@ -112,13 +109,10 @@ async def stream_handler(request):
 async def status_check(request):
     return web.Response(text="Bot is Online & Running")
 
-# --- 5. MAIN HANDLERS (With Debugging Prints) ---
-
+# --- 5. MAIN HANDLERS ---
 @app.on_message(filters.command("start"))
 async def start(client, message):
-    # 👇 Ye Logs mein dikhega agar bot message receive karega
     print(f"📩 DEBUG: Command /start received from {message.from_user.id}")
-    
     await message.reply_text(
         "👋 **Hello!**\n"
         "Mujhe koi bhi File ya Video bhejo, main uska Stream Link bana dunga."
@@ -137,7 +131,7 @@ async def private_receive_handler(client, message):
         original_link = f"{ONLINE_URL}/watch/{log_msg.id}"
         final_link = await get_short_link(original_link)
         
-        note = "⚠️ _Ads skip karein dekhne ke liye_" if SYSTEM_CONFIG["use_shortener"] else "✅ _Direct Link_"
+        note = "⚠️ _Ads skip karein_" if SYSTEM_CONFIG["use_shortener"] else "✅ _Direct Link_"
         
         await wait_msg.edit_text(
             f"✅ **Link Ready!**\n\n"
@@ -149,9 +143,9 @@ async def private_receive_handler(client, message):
         print(f"❌ ERROR: {e}")
         await wait_msg.edit_text(
             f"❌ **Error:** {e}\n\n"
-            "**Possible Reasons:**\n"
-            "1. Bot Log Channel mein Admin nahi hai.\n"
-            "2. BIN_CHANNEL ID galat hai."
+            "**Check Karo:**\n"
+            "1. Bot Log Channel mein Admin hai?\n"
+            "2. Channel ID sahi hai?"
         )
 
 # --- 6. STARTUP ---
@@ -173,4 +167,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
+        
