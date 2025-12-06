@@ -1,56 +1,100 @@
 import asyncio
 from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiohttp import web
-import aiohttp # Shortener API call karne ke liye
+import aiohttp 
 
 # --- 1. CONFIGURATION ---
 API_ID = 1234567           
 API_HASH = "your_api_hash" 
 BOT_TOKEN = "your_bot_token"
 BIN_CHANNEL = -100xxxxxxxxx 
+OWNER_ID = 5804953849       # Apni Telegram ID yahan daalo (Sirf Owner setting badal payega)
 PORT = 8080
 
-# 👇 KOYEB KA PUBLIC URL (Deploy hone ke baad yahan dalna)
-ONLINE_URL = "http://0.0.0.0:8080" 
+# KOYEB URL
+ONLINE_URL = "http://0.0.0.0:8080" # Deploy ke baad isse Koyeb URL se replace karna
 
-# 👇 SHORTENER CONFIGURATION (Yahan apni details daalo)
-USE_SHORTENER = True  # Agar shortener nahi chahiye to False kar dena
-SHORTENER_DOMAIN = "gplinks.com"  # Example: gplinks.com, droplink.co
-SHORTENER_API_KEY = "tumhara_api_key_yahan_daalo"
+# SHORTENER DETAILS
+SHORTENER_DOMAIN = "gplinks.com" 
+SHORTENER_API_KEY = "tumhara_api_key"
+
+# --- SYSTEM CONFIG (Default Settings) ---
+# Ye system yaad rakhega ki shortener ON hai ya OFF
+SYSTEM_CONFIG = {
+    "use_shortener": True  # Default ON rakha hai
+}
 
 # Pyrogram Client
-app = Client("MyStreamBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("StreamBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# --- 2. SHORTENER FUNCTION (New Feature) ---
+# --- 2. SHORTENER FUNCTION (With ON/OFF Check) ---
 async def get_short_link(link):
-    if not USE_SHORTENER:
-        return link
+    # Sabse pehle check karo ki Setting ON hai ya nahi
+    if not SYSTEM_CONFIG["use_shortener"]:
+        return link # Agar OFF hai to direct link bhejo
         
     try:
-        # Zyadatar shorteners ka format yahi hota hai
         api_url = f"https://{SHORTENER_DOMAIN}/api?api={SHORTENER_API_KEY}&url={link}"
-        
         async with aiohttp.ClientSession() as session:
             async with session.get(api_url) as response:
                 data = await response.json()
-                
-                # Agar success hai to short link return karo
                 if "shortenedUrl" in data:
                     return data["shortenedUrl"]
                 else:
-                    # Agar error aaye to original link hi bhej do
                     return link
     except Exception as e:
         print(f"Shortener Error: {e}")
         return link
 
-# --- 3. STREAMING LOGIC ---
+# --- 3. SETTINGS MENU (ON/OFF BUTTON) ---
+@app.on_message(filters.command("settings") & filters.private)
+async def settings_menu(client, message):
+    # Sirf Owner hi settings khol payega
+    if message.from_user.id != OWNER_ID:
+        return await message.reply("❌ Aap Owner nahi hain.")
+
+    status = "✅ ON" if SYSTEM_CONFIG["use_shortener"] else "❌ OFF"
+    
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"Shortener: {status}", callback_data="toggle_shortener")],
+        [InlineKeyboardButton("✖️ Close", callback_data="close_menu")]
+    ])
+    
+    await message.reply_text(
+        "⚙️ **Bot Settings Panel**\n\nYahan se aap Shortener ko control kar sakte hain.",
+        reply_markup=buttons
+    )
+
+@app.on_callback_query(filters.regex("toggle_shortener"))
+async def toggle_shortener(client, callback):
+    if callback.from_user.id != OWNER_ID:
+        return await callback.answer("Not allowed!", show_alert=True)
+
+    # ON ko OFF, aur OFF ko ON karo
+    SYSTEM_CONFIG["use_shortener"] = not SYSTEM_CONFIG["use_shortener"]
+    
+    # Button Text update karo
+    new_status = "✅ ON" if SYSTEM_CONFIG["use_shortener"] else "❌ OFF"
+    
+    new_buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"Shortener: {new_status}", callback_data="toggle_shortener")],
+        [InlineKeyboardButton("✖️ Close", callback_data="close_menu")]
+    ])
+    
+    await callback.message.edit_reply_markup(reply_markup=new_buttons)
+    await callback.answer(f"Shortener ab {new_status} hai!")
+
+@app.on_callback_query(filters.regex("close_menu"))
+async def close_menu(client, callback):
+    await callback.message.delete()
+
+# --- 4. STREAMING SERVER ---
 async def stream_handler(request):
     try:
         message_id = int(request.match_info['message_id'])
         msg = await app.get_messages(BIN_CHANNEL, message_id)
         file = msg.document or msg.video or msg.audio
-        
         if not file: return web.Response(text="File not found", status=404)
 
         headers = {
@@ -58,48 +102,45 @@ async def stream_handler(request):
             'Content-Disposition': f'attachment; filename="{file.file_name}"',
             'Content-Length': str(file.file_size),
         }
-
         response = web.StreamResponse(status=200, headers=headers)
         await response.prepare(request)
-
         async for chunk in app.download_media(msg, in_memory=True):
             await response.write(chunk)
-
         return response
     except Exception as e:
         return web.Response(text=f"Error: {e}", status=500)
 
 async def status_check(request):
-    return web.Response(text="Bot is Online")
+    return web.Response(text="Bot Running")
 
-# --- 4. TELEGRAM HANDLERS ---
+# --- 5. MAIN HANDLERS ---
 @app.on_message(filters.command("start"))
 async def start(client, message):
-    await message.reply_text("👋 File bhejo, main short link bana dunga!")
+    await message.reply_text("👋 File bhejo, main link bana dunga!")
 
 @app.on_message(filters.document | filters.video | filters.audio)
 async def private_receive_handler(client, message):
-    wait_msg = await message.reply_text("🔄 Processing & Shortening...")
-    
+    wait_msg = await message.reply_text("🔄 Processing...")
     try:
         log_msg = await message.copy(BIN_CHANNEL)
-        
-        # Original Stream Link
         original_link = f"{ONLINE_URL}/watch/{log_msg.id}"
         
-        # 👇 Short Link Generate kar rahe hain
+        # Yahan magic hoga (ON/OFF check karke link banega)
         final_link = await get_short_link(original_link)
+        
+        # Message decide karo based on Shortener status
+        note = "⚠️ _Link open karne ke liye ads skip karein._" if SYSTEM_CONFIG["use_shortener"] else "✅ _Direct Streaming Link_"
         
         await wait_msg.edit_text(
             f"✅ **Link Ready!**\n\n"
             f"📂 **File:** `{message.document.file_name if message.document else 'Video'}`\n"
-            f"🔗 **Watch/Download:**\n{final_link}\n\n"
-            f"⚠️ _Note: Link open karne ke liye ads skip karein._"
+            f"🔗 **Link:**\n{final_link}\n\n"
+            f"{note}"
         )
     except Exception as e:
         await wait_msg.edit_text(f"❌ Error: {e}")
 
-# --- 5. SERVER STARTUP ---
+# --- 6. STARTUP ---
 async def start_server():
     server = web.Application()
     server.router.add_get('/', status_check)
@@ -111,8 +152,9 @@ async def start_server():
 async def main():
     await app.start()
     await start_server()
-    print("Bot with Shortener Started!")
+    print("Bot with Settings Panel Started!")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
