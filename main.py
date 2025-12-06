@@ -19,7 +19,7 @@ OWNER_ID = 5804953849
 
 # Koyeb URL (Pehli baar deploy karne ke baad yahan update karna)
 # Example: "https://my-bot.koyeb.app"
-ONLINE_URL = "tropical-constantia-dminemraj-a4819015.koyeb.app/" 
+ONLINE_URL = "https://tropical-constantia-dminemraj-a4819015.koyeb.app/" 
 PORT = 8080
 
 # --- SHORTENER CONFIGURATION ---
