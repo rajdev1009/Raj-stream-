@@ -6,7 +6,7 @@ import aiohttp
 
 # --- 1. CONFIGURATION ---
 API_ID = 27084955           
-API_HASH = "your_api_hash" 
+API_HASH = "91c88b554ab2a34f8b0c72228f06fc0b" 
 BOT_TOKEN = "your_bot_token" #your_bot_token
 BIN_CHANNEL = -1002391366258 
 OWNER_ID = 5804953849       # Apni Telegram ID yahan daalo (Sirf Owner setting badal payega)
