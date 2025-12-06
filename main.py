@@ -9,7 +9,7 @@ import aiohttp
 
 API_ID = 27084955            # Apna API ID yahan daalo (Integer)
 API_HASH = "91c88b554ab2a34f8b0c72228f06fc0b" # Apna Hash yahan daalo
-BOT_TOKEN = "7777252416:AAG1D8PvNoISnvOkpxc8t8yY1mP8Wf-Opq4" # Bot Token yahan
+BOT_TOKEN = "7777252416:AAGTEeNl4dMffOAC0SqSMT4CI5EiMKnKi-E" # Bot Token yahan
 
 # Log Channel ID (Bot yahan Admin hona chahiye)
 BIN_CHANNEL = -1002391366258  
