@@ -13,7 +13,7 @@ OWNER_ID = 5804953849       # Apni Telegram ID yahan daalo (Sirf Owner setting b
 PORT = 8080
 
 # KOYEB URL
-ONLINE_URL = "http://0.0.0.0:8080" # Deploy ke baad isse Koyeb URL se replace karna
+ONLINE_URL = "tropical-constantia-dminemraj-a4819015.koyeb.app/" # Deploy ke baad isse Koyeb URL se replace karna
 
 # SHORTENER DETAILS
 SHORTENER_DOMAIN = "gplinks.com" 
