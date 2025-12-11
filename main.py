@@ -1,170 +1,122 @@
 import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import Message
 from aiohttp import web
-import aiohttp 
+import time
+import math
 
-# --- 1. CONFIGURATION ---
+# --- CONFIGURATION (इसे ध्यान से भरें) ---
+API_ID = 12345678  # my.telegram.org se milega
+API_HASH = "your_api_hash_here" # my.telegram.org se milega
+BOT_TOKEN = "7793783847:AAF0QSWnyLjUuaY8NfX-GumX0CY_cS2agCY"
+BIN_CHANNEL = -1001234567890  # Private Channel ID jaha files store hongi
+APP_URL = "https://your-app-name.koyeb.app" # Koyeb App URL (no slash at end)
+# ---------------------------------------
 
-API_ID = 27084955
-API_HASH = "91c88b554ab2a34f8b0c72228f06fc0b"
-BOT_TOKEN = "7777252416:AAGTEeNl4dMffOAC0SqSMT4CI5EiMKnKi-E"
-
-# Log Channel ID (Make sure Bot is Admin here)
-BIN_CHANNEL = -1002391366258
-
-# Owner ID
-OWNER_ID = 5804953849       
-
-# Koyeb URL
-ONLINE_URL = "https://tropical-constantia-dminemraj-a4819015.koyeb.app"
-PORT = 8080
-
-# --- SHORTENER CONFIGURATION ---
-SHORTENER_DOMAIN = "gplinks.com" 
-SHORTENER_API_KEY = "tumhara_api_key" # Jab ON karoge tab asli key daalna
-
-# --- SYSTEM SETTINGS ---
-SYSTEM_CONFIG = {
-    "use_shortener": False  # Abhi OFF hai testing ke liye
-}
-
-# Pyrogram Client Setup
+# Client Setup
 app = Client(
-    "StreamBot",
+    "RajStreamBot",
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=BOT_TOKEN
 )
 
-# --- 2. SHORTENER FUNCTION ---
-async def get_short_link(link):
-    if not SYSTEM_CONFIG["use_shortener"]:
-        return link 
-        
-    try:
-        api_url = f"https://{SHORTENER_DOMAIN}/api?api={SHORTENER_API_KEY}&url={link}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(api_url) as response:
-                data = await response.json()
-                if "shortenedUrl" in data:
-                    return data["shortenedUrl"]
-                else:
-                    return link
-    except Exception as e:
-        print(f"⚠️ Shortener Error: {e}")
-        return link
+# --- WEB SERVER (Streaming Logic) ---
+routes = web.RouteTableDef()
 
-# --- 3. SETTINGS PANEL (Owner Only) ---
-@app.on_message(filters.command("settings") & filters.private)
-async def settings_menu(client, message):
-    if message.from_user.id != OWNER_ID:
-        return await message.reply("❌ Aap Owner nahi hain.")
+@routes.get("/")
+async def home(request):
+    return web.Response(text="✅ Raj Stream Bot is Alive for Movies!")
 
-    status = "✅ ON" if SYSTEM_CONFIG["use_shortener"] else "❌ OFF"
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"Shortener: {status}", callback_data="toggle_shortener")],
-        [InlineKeyboardButton("✖️ Close", callback_data="close_menu")]
-    ])
-    await message.reply_text("⚙️ **Settings Panel**", reply_markup=buttons)
-
-@app.on_callback_query(filters.regex("toggle_shortener"))
-async def toggle_shortener(client, callback):
-    if callback.from_user.id != OWNER_ID: return
-    SYSTEM_CONFIG["use_shortener"] = not SYSTEM_CONFIG["use_shortener"]
-    new_status = "✅ ON" if SYSTEM_CONFIG["use_shortener"] else "❌ OFF"
-    new_buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"Shortener: {new_status}", callback_data="toggle_shortener")],
-        [InlineKeyboardButton("✖️ Close", callback_data="close_menu")]
-    ])
-    await callback.message.edit_reply_markup(reply_markup=new_buttons)
-
-@app.on_callback_query(filters.regex("close_menu"))
-async def close_menu(client, callback):
-    await callback.message.delete()
-
-# --- 4. STREAMING ENGINE ---
+@routes.get("/stream/{message_id}")
 async def stream_handler(request):
     try:
         message_id = int(request.match_info['message_id'])
+        # Log channel se message uthana
         msg = await app.get_messages(BIN_CHANNEL, message_id)
-        file = msg.document or msg.video or msg.audio
-        
-        if not file: return web.Response(text="File not found", status=404)
+        if not msg or not msg.video and not msg.document:
+            return web.Response(text="File not found", status=404)
 
+        file = msg.video or msg.document
+        file_size = file.file_size
+        file_name = getattr(file, "file_name", "video.mp4")
+        mime_type = getattr(file, "mime_type", "video/mp4")
+
+        # Range Header Handling (Seeking ke liye)
+        range_header = request.headers.get("Range")
+        from_bytes, until_bytes = 0, file_size - 1
+        if range_header:
+            from_bytes, until_bytes = range_header.replace("bytes=", "").split("-")
+            from_bytes = int(from_bytes)
+            until_bytes = int(until_bytes) if until_bytes else file_size - 1
+
+        length = until_bytes - from_bytes + 1
         headers = {
-            'Content-Type': file.mime_type,
-            'Content-Disposition': f'attachment; filename="{file.file_name}"',
-            'Content-Length': str(file.file_size),
+            "Content-Type": mime_type,
+            "Content-Range": f"bytes {from_bytes}-{until_bytes}/{file_size}",
+            "Content-Length": str(length),
+            "Accept-Ranges": "bytes",
+            "Content-Disposition": f'attachment; filename="{file_name}"'
         }
-        response = web.StreamResponse(status=200, headers=headers)
+
+        # Response shuru karna
+        response = web.StreamResponse(status=206 if range_header else 200, headers=headers)
         await response.prepare(request)
-        
-        async for chunk in app.download_media(msg, in_memory=True):
+
+        # Telegram se chunks lekar user ko bhejna
+        async for chunk in app.stream_media(msg, offset=from_bytes, limit=length):
             await response.write(chunk)
+        
         return response
+
     except Exception as e:
-        return web.Response(text=f"Server Error: {e}", status=500)
+        return web.Response(text=f"Error: {e}", status=500)
 
-async def status_check(request):
-    return web.Response(text="Bot is Online & Running")
+# --- BOT COMMANDS ---
 
-# --- 5. MAIN HANDLERS ---
-@app.on_message(filters.command("start"))
+@app.on_message(filters.command("start") & filters.private)
 async def start(client, message):
-    print(f"📩 DEBUG: Command /start received from {message.from_user.id}")
     await message.reply_text(
-        "👋 **Hello!**\n"
-        "Mujhe koi bhi File ya Video bhejo, main uska Stream Link bana dunga."
+        "🎬 **Raj Movie Stream Bot**\n\n"
+        "Muje koi bhi Movie ya Video bhejo, main uska **High Speed Stream Link** dunga.\n"
+        "Ye link MX Player aur VLC mein bhi chalega!"
     )
 
-@app.on_message(filters.document | filters.video | filters.audio)
-async def private_receive_handler(client, message):
-    print(f"📩 DEBUG: File received from {message.from_user.id}")
-    wait_msg = await message.reply_text("🔄 Processing...")
+@app.on_message((filters.document | filters.video) & filters.private)
+async def generate_link(client, message: Message):
+    status_msg = await message.reply_text("🔄 **Processing Movie...**")
     
     try:
-        # File ko Log Channel mein bhej rahe hain
+        # File ko Log Channel me forward karna (Permanent Link ke liye)
         log_msg = await message.copy(BIN_CHANNEL)
-        print(f"✅ DEBUG: File copied to Channel {BIN_CHANNEL} (Msg ID: {log_msg.id})")
+        stream_link = f"{APP_URL}/stream/{log_msg.id}"
         
-        original_link = f"{ONLINE_URL}/watch/{log_msg.id}"
-        final_link = await get_short_link(original_link)
-        
-        note = "⚠️ _Ads skip karein_" if SYSTEM_CONFIG["use_shortener"] else "✅ _Direct Link_"
-        
-        await wait_msg.edit_text(
-            f"✅ **Link Ready!**\n\n"
-            f"📂 **File:** `{message.document.file_name if message.document else 'Video'}`\n"
-            f"🔗 **Link:**\n{final_link}\n\n"
-            f"{note}"
+        await status_msg.edit_text(
+            f"✅ **Link Generated!**\n\n"
+            f"📂 **File:** {message.video.file_name if message.video and message.video.file_name else 'Movie'}\n"
+            f"🔗 **Stream/Download Link:**\n`{stream_link}`\n\n"
+            f"⚠️ *Ye link MX Player me paste karke movie dekh sakte ho.*"
         )
     except Exception as e:
-        print(f"❌ ERROR: {e}")
-        await wait_msg.edit_text(
-            f"❌ **Error:** {e}\n\n"
-            "**Check Karo:**\n"
-            "1. Bot Log Channel mein Admin hai?\n"
-            "2. Channel ID sahi hai?"
-        )
+        await status_msg.edit_text(f"❌ Error: {e}\nMake sure Bot is Admin in Log Channel.")
 
-# --- 6. STARTUP ---
-async def start_server():
-    server = web.Application()
-    server.router.add_get('/', status_check)
-    server.router.add_get('/watch/{message_id}', stream_handler)
-    runner = web.AppRunner(server)
-    await runner.setup()
-    await web.TCPSite(runner, '0.0.0.0', PORT).start()
+# --- RUNNING SERVER & BOT ---
 
-async def main():
+async def start_services():
+    # Web Server Start
+    server = web.AppRunner(web.Application(client_max_size=30000000)) # 30MB request limit (headers)
+    server.app.add_routes(routes)
+    await server.setup()
+    site = web.TCPSite(server, "0.0.0.0", 8080)
+    await site.start()
+    print("🌐 Web Server Running...")
+
+    # Bot Start
     print("🤖 Bot Starting...")
     await app.start()
-    print("✅ Pyrogram Client Started!")
-    await start_server()
-    print("🌍 Web Server Started!")
-    await asyncio.Event().wait()
+    await asyncio.Event().wait() # Keep running
 
 if __name__ == "__main__":
-    asyncio.run(main())
-        
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(start_services())
+    
